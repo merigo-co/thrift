@@ -324,11 +324,11 @@ write_values(This0, ValueList) ->
 %% The resulting binary is immediately send to the JSX stream parser.
 %% Subsequent calls to read actually operate on the events returned by JSX.
 read_all(#json_protocol{transport = Transport0} = State) ->
-    {Transport1, Bin} = read_all_1(Transport0, []),
-    P = jsx:parser(),
+    {Transport1, _Bin} = read_all_1(Transport0, []),
+    %P = jsx:parser(),
     State#json_protocol{
-        transport = Transport1,
-        jsx = P(Bin)
+        transport = Transport1
+        %jsx = P(Bin)
     }.
 
 read_all_1(Transport0, IoList) ->

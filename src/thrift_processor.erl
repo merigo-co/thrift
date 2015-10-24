@@ -158,7 +158,7 @@ handle_exception(State = #thrift_processor{service = Service},
     ExceptionTuple = list_to_tuple([Function | ExceptionList]),
 
                                                 % Make sure we got at least one defined
-    case lists:all(fun(X) -> X =:= undefined end, ExceptionList) of
+    case lists:all(fun(X) -> (X =:= undefined orelse X =:= nil) end, ExceptionList) of
         true ->
             handle_unknown_exception(State, Function, Exception, Seqid);
         false ->

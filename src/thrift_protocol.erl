@@ -95,7 +95,7 @@ read(IProto0, {struct, Structure}, Tag)
 
     % If we want a tagged tuple, we need to offset all the tuple indices
     % by 1 to avoid overwriting the tag.
-    Offset = if Tag =/= undefined -> 1; true -> 0 end,
+    Offset = if (Tag =/= undefined orelse Tag =/= nil) -> 1; true -> 0 end,
     IndexList = case length(Structure) of
                     N when N > 0 -> lists:seq(1 + Offset, N + Offset);
                     _ -> []
@@ -109,7 +109,7 @@ read(IProto0, {struct, Structure}, Tag)
 
     {IProto1, ok} = read(IProto0, struct_begin),
     RTuple0 = erlang:make_tuple(length(Structure) + Offset, undefined),
-    RTuple1 = if Tag =/= undefined -> setelement(1, RTuple0, Tag);
+    RTuple1 = if (Tag =/= undefined orelse Tag =/= nil) -> setelement(1, RTuple0, Tag);
                  true              -> RTuple0
               end,
 
@@ -391,6 +391,8 @@ write(Proto = #protocol{module = Module,
 struct_write_loop(Proto0, [{Fid, Type} | RestStructDef], [Data | RestData]) ->
     NewProto = case Data of
                    undefined ->
+                       Proto0; % null fields are skipped in response
+                   nil ->
                        Proto0; % null fields are skipped in response
                    _ ->
                        {Proto1, ok} = write(Proto0,

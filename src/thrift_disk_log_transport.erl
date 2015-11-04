@@ -82,6 +82,8 @@ flush(This = #dl_transport{log = Log, sync_every = SE}) ->
     case SE of
         undefined -> % no time-based sync
             disk_log:sync(Log);
+        nil -> % no time-based sync
+            disk_log:sync(Log);
         _Else ->     % sync will happen automagically
             ok
     end,

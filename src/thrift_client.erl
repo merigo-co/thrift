@@ -135,7 +135,7 @@ handle_reply(Client = #tclient{protocol = Proto0,
     true = length(ReplyList) == length(ExceptionFields) + 1,
     ExceptionVals = tl(ReplyList),
     Thrown = [X || X <- ExceptionVals,
-                   X =/= undefined],
+                   (X =/= undefined andalso X =/= nil)],
     case Thrown of
         [] when ReplyType == {struct, []} ->
             {NewClient, {ok, ok}};

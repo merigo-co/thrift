@@ -122,6 +122,8 @@ start_server(State=#thrift_socket_server{name=Name}) ->
     case Name of
         undefined ->
             gen_server:start_link(?MODULE, State, []);
+        nil ->
+            gen_server:start_link(?MODULE, State, []);
         _ ->
             gen_server:start_link(Name, ?MODULE, State, [])
     end.

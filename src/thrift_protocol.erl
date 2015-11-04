@@ -63,8 +63,8 @@ close_transport(#protocol{module = Module,
 typeid_to_atom(?tType_STOP) -> field_stop;
 typeid_to_atom(?tType_VOID) -> void;
 typeid_to_atom(?tType_BOOL) -> bool;
-typeid_to_atom(?tType_BYTE) -> byte;
 typeid_to_atom(?tType_DOUBLE) -> double;
+typeid_to_atom(?tType_I8) -> byte;
 typeid_to_atom(?tType_I16) -> i16;
 typeid_to_atom(?tType_I32) -> i32;
 typeid_to_atom(?tType_I64) -> i64;
@@ -76,8 +76,9 @@ typeid_to_atom(?tType_LIST) -> list.
 
 term_to_typeid(void) -> ?tType_VOID;
 term_to_typeid(bool) -> ?tType_BOOL;
-term_to_typeid(byte) -> ?tType_BYTE;
+term_to_typeid(byte) -> ?tType_I8;
 term_to_typeid(double) -> ?tType_DOUBLE;
+term_to_typeid(i8) -> ?tType_I8;
 term_to_typeid(i16) -> ?tType_I16;
 term_to_typeid(i32) -> ?tType_I32;
 term_to_typeid(i64) -> ?tType_I64;
@@ -95,7 +96,7 @@ read(IProto0, {struct, Structure}, Tag)
 
     % If we want a tagged tuple, we need to offset all the tuple indices
     % by 1 to avoid overwriting the tag.
-    Offset = if (Tag =/= undefined orelse Tag =/= nil) -> 1; true -> 0 end,
+    Offset = if Tag =/= undefined -> 1; true -> 0 end,
     IndexList = case length(Structure) of
                     N when N > 0 -> lists:seq(1 + Offset, N + Offset);
                     _ -> []
@@ -109,7 +110,7 @@ read(IProto0, {struct, Structure}, Tag)
 
     {IProto1, ok} = read(IProto0, struct_begin),
     RTuple0 = erlang:make_tuple(length(Structure) + Offset, undefined),
-    RTuple1 = if (Tag =/= undefined orelse Tag =/= nil) -> setelement(1, RTuple0, Tag);
+    RTuple1 = if Tag =/= undefined -> setelement(1, RTuple0, Tag);
                  true              -> RTuple0
               end,
 
@@ -148,8 +149,12 @@ read(IProto0, {list, Type}) ->
 read(IProto0, {map, KeyType, ValType}) ->
     {IProto1, #protocol_map_begin{size = Size, ktype = KType, vtype = VType}} =
         read(IProto0, map_begin),
-    {KType, KType} = {term_to_typeid(KeyType), KType},
-    {VType, VType} = {term_to_typeid(ValType), VType},
+    _ = case Size of
+      0 -> 0;
+      _ ->
+        {KType, KType} = {term_to_typeid(KeyType), KType},
+        {VType, VType} = {term_to_typeid(ValType), VType}
+    end,
     {List, IProto2} = lists:mapfoldl(fun(_, ProtoS0) ->
                                              {ProtoS1, {ok, Key}} = read(ProtoS0, KeyType),
                                              {ProtoS2, {ok, Val}} = read(ProtoS1, ValType),
@@ -191,7 +196,8 @@ read_struct_loop(IProto0, SDict, RTuple) ->
         thrift_protocol:read(IProto0, field_begin),
     case {FType, Fid} of
         {?tType_STOP, _} ->
-            {IProto1, RTuple};
+            {IProto2, ok} = read(IProto1, struct_end),
+            {IProto2, RTuple};
         _Else ->
             case dict:find(Fid, SDict) of
                 {ok, {Type, Index}} ->
@@ -391,8 +397,6 @@ write(Proto = #protocol{module = Module,
 struct_write_loop(Proto0, [{Fid, Type} | RestStructDef], [Data | RestData]) ->
     NewProto = case Data of
                    undefined ->
-                       Proto0; % null fields are skipped in response
-                   nil ->
                        Proto0; % null fields are skipped in response
                    _ ->
                        {Proto1, ok} = write(Proto0,

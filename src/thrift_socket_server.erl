@@ -38,7 +38,10 @@
          listen=null,
          acceptor=null,
          socket_opts=[{recv_timeout, 500}],
-         framed=false
+         protocol=binary,
+         framed=false,
+         ssltransport=false,
+         ssloptions=[]
         }).
 
 start(State=#thrift_socket_server{}) ->
@@ -103,14 +106,21 @@ parse_options([{max, Max} | Rest], State) ->
                      Max
              end,
     parse_options(Rest, State#thrift_socket_server{max=MaxInt});
+
+parse_options([{protocol, Proto} | Rest], State) when is_atom(Proto) ->
+    parse_options(Rest, State#thrift_socket_server{protocol=Proto});
+
 parse_options([{framed, Framed} | Rest], State) when is_boolean(Framed) ->
-    parse_options(Rest, State#thrift_socket_server{framed=Framed}).
+    parse_options(Rest, State#thrift_socket_server{framed=Framed});
+
+parse_options([{ssltransport, SSLTransport} | Rest], State) when is_boolean(SSLTransport) ->
+    parse_options(Rest, State#thrift_socket_server{ssltransport=SSLTransport});
+parse_options([{ssloptions, SSLOptions} | Rest], State) when is_list(SSLOptions) ->
+    parse_options(Rest, State#thrift_socket_server{ssloptions=SSLOptions}).
 
 start_server(State=#thrift_socket_server{name=Name}) ->
     case Name of
         undefined ->
-            gen_server:start_link(?MODULE, State, []);
-        nil ->
             gen_server:start_link(?MODULE, State, []);
         _ ->
             gen_server:start_link(Name, ?MODULE, State, [])
@@ -170,25 +180,32 @@ new_acceptor(State=#thrift_socket_server{max=0}) ->
     State#thrift_socket_server{acceptor=null};
 new_acceptor(State=#thrift_socket_server{listen=Listen,
                                          service=Service, handler=Handler,
-                                         socket_opts=Opts, framed=Framed
+                                         socket_opts=Opts, framed=Framed, protocol=Proto,
+                                         ssltransport=SslTransport, ssloptions=SslOptions
                                         }) ->
     Pid = proc_lib:spawn_link(?MODULE, acceptor_loop,
-                              [{self(), Listen, Service, Handler, Opts, Framed}]),
+                              [{self(), Listen, Service, Handler, Opts, Framed, SslTransport, SslOptions, Proto}]),
     State#thrift_socket_server{acceptor=Pid}.
 
-acceptor_loop({Server, Listen, Service, Handler, SocketOpts, Framed})
+acceptor_loop({Server, Listen, Service, Handler, SocketOpts, Framed, SslTransport, SslOptions, Proto})
   when is_pid(Server), is_list(SocketOpts) ->
     case catch gen_tcp:accept(Listen) of % infinite timeout
         {ok, Socket} ->
             gen_server:cast(Server, {accepted, self()}),
             ProtoGen = fun() ->
-                               {ok, SocketTransport}   = thrift_socket_transport:new(Socket, SocketOpts),
-                               {ok, Transport}         =
-                                   case Framed of
-                                       true  -> thrift_framed_transport:new(SocketTransport);
-                                       false -> thrift_buffered_transport:new(SocketTransport)
-                                   end,
-                               {ok, Protocol}          = thrift_binary_protocol:new(Transport),
+                               {ok, SocketTransport} = case SslTransport of
+                                                           true  -> thrift_sslsocket_transport:new(Socket, SocketOpts, SslOptions);
+                                                           false -> thrift_socket_transport:new(Socket, SocketOpts)
+                                                       end,
+                               {ok, Transport}       = case Framed of
+                                                           true  -> thrift_framed_transport:new(SocketTransport);
+                                                           false -> thrift_buffered_transport:new(SocketTransport)
+                                                       end,
+                               {ok, Protocol}        = case Proto of
+                                                         compact -> thrift_compact_protocol:new(Transport);
+                                                         json -> thrift_json_protocol:new(Transport);
+                                                         _ -> thrift_binary_protocol:new(Transport)
+                                                       end,
                                {ok, Protocol}
                        end,
             thrift_processor:init({Server, ProtoGen, Service, Handler});
@@ -216,8 +233,11 @@ handle_cast({accepted, Pid},
 handle_cast(stop, State) ->
     {stop, normal, State}.
 
-terminate(_Reason, #thrift_socket_server{listen=Listen, port=Port}) ->
+terminate(Reason, #thrift_socket_server{listen=Listen, port=Port}) ->
     gen_tcp:close(Listen),
+    {backtrace, Bt} = erlang:process_info(self(), backtrace),
+    error_logger:error_report({?MODULE, ?LINE,
+                               {child_error, Reason, Bt}}),
     case Port < 1024 of
         true ->
             catch fdsrv:stop(),

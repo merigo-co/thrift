@@ -55,7 +55,7 @@ flush_transport(Proto = #protocol{module = Module,
     {NewData, Result} = Module:flush_transport(Data),
     {Proto#protocol{data = NewData}, Result}.
 
--spec close_transport(#protocol{}) -> ok.
+-spec close_transport(#protocol{}) -> ok | {#protocol{}, ok}.
 close_transport(#protocol{module = Module,
                           data = Data}) ->
     Module:close_transport(Data).

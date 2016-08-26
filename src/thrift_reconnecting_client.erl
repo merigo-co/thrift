@@ -226,9 +226,9 @@ timer_fun() ->
   end.
 -else.
 timer_fun() ->
-  T1 = erlang:now(),
+  T1 = os:timestamp(),
   fun() ->
-    T2 = erlang:now(),
+    T2 = os:timestamp(),
     timer:now_diff(T2, T1)
   end.
 -endif.
